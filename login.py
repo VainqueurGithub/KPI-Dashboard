@@ -17,7 +17,7 @@ def validate_login(username, email):
         "user_id": username,
         "email": email
     })
-    return result.empty
+    return not result.empty
 
 
 def require_login():
@@ -30,13 +30,15 @@ def require_login():
         email = st.text_input("Email")
 
         if st.button("Login"):
-            if validate_login(username, email):
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success("Login successful ✅")
-                st.rerun()
-            else:
-                st.error("Invalid credentials ❌")
-
+            try:
+                if validate_login(username, email):
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.success("Login successful ✅")
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials ❌")
+            except Exception as e:
+                st.error(f"Check your database connection or VPN : {e}")
     login_dialog()
     st.stop()
