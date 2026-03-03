@@ -23,8 +23,8 @@ def show_db_popup():
 # Psycopg2 Connection
 # ---------------------
 @st.cache_resource
-def psy_try_connect(host="10.5.2.130", port="5432", database="dianfossey", 
-                    user="vainqueur", password="BWLCMmpdva@10"):
+def psy_try_connect(host="", port="", database="", 
+                    user="", password=""):
     return psycopg2.connect(
         host=host,
         port=port,
