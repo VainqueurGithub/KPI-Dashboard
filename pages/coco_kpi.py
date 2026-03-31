@@ -1,17 +1,15 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import time
-from streamlit_card import card
 from streamlit_extras.metric_cards import style_metric_cards
 import plotly.express as px
 import altair as alt
 import geopandas as gpd
 import folium
 from streamlit_folium import st_folium
-import pydeck as pdk
-from shapely.geometry import mapping
 from core.connection import st_connection
+import folium
+from streamlit_folium import st_folium
+from shapely.geometry import Point
 
 if ("st_conn" is not st.session_state) | ("psyc_conn" is not st.session_state):
     pass
@@ -27,6 +25,8 @@ st.set_page_config(
         'About': "# This is a header. This is an *extremely* cool app!"
     }
 )
+
+
 
 # --- SOME KEY FUNCTIONS ---#
 def coco_kpi_livestock(assoc_numb, work_clos, members, beneficiaires, males, females, students, earthling_fam):
@@ -59,9 +59,10 @@ try:
     query_eleve_ft = conn.query('SELECT * FROM prog_coco.eleve_fterien;', ttl="10m")
     query_ft_cfcl = conn.query('SELECT * FROM prog_coco.cfcl_fterien_v;', ttl="10m")
     query_livestock_seed = conn.query('SELECT * FROM prog_coco.livestock_seed', ttl="10m")
-    query_monthly_production = conn.query('SELECT * FROM prog_coco.production_mensuelle', ttl="10m")
+    query_monthly_production = conn.query('SELECT pm.production_id, pm.village, pm.nombre_menage, pm.mois, pm.annee, pm.produit, pm.quantite_produite, pm.quantite_consomme, pm.quantite_vendue, pm.prix_unitaire_dollars, p.unite_mesure FROM prog_coco.production_mensuelle pm JOIN prog_coco.produit p ON pm.produit=p.produit', ttl="10m")
     query_villages = conn.query('SELECT * FROM prog_coco.village', ttl="10m")
     query_months = conn.query('SELECT mois, annee FROM prog_coco.mois', ttl="10m")
+    query_suivi_production = conn.query('SELECT latitude, longitude FROM prog_coco.suivi_production', ttl="10m")
     query_products = conn.query('SELECT * FROM prog_coco.produit', ttl="10m")
     village_options = query_villages['village'].unique()
     query_months['mois_annee'] =query_months['mois']+"-"+query_months['annee'].astype(str)
@@ -69,9 +70,6 @@ try:
     query_months.index = query_months.index + 1  # shifting index
     query_months.sort_index(inplace=True)
     moth_year_options = query_months['mois_annee'].unique()
-    query_products.loc[-1] = ''
-    query_products.index = query_products.index + 1  # shifting index
-    query_products.sort_index(inplace=True)
     product_options = query_products['produit'].unique()
     years_options = query_months['annee'].unique()
 
@@ -323,6 +321,15 @@ try:
                 gdf = gdf.to_crs(epsg=4326)
                 m = folium.Map(location=[gdf.geometry.centroid.y.mean(),gdf.geometry.centroid.x.mean()],zoom_start=6, width='100%')
                 folium.GeoJson(gdf).add_to(m)
+
+                # Drop rows with missing coordinates
+                data_points = query_suivi_production.dropna(subset=['latitude', 'longitude'])
+
+                # Create geometry column
+                geometry = [Point(xy) for xy in zip(data_points['longitude'], data_points['latitude'])]
+                gdf_points = gpd.GeoDataFrame(data_points, geometry=geometry, crs="EPSG:4326")
+
+                folium.GeoJson(gdf_points).add_to(m)
                 st_folium(m, width='20%', height=800)
 
         except Exception as e:
@@ -350,22 +357,24 @@ try:
             selected_data = selected_data[selected_data['annee'] == selected_year]
         if selected_month_year !='':
             selected_data = selected_data[selected_data['mois_annee'] == selected_month_year]
-        
+
+        unite= selected_data['unite_mesure'].unique()[0] if len(selected_data['unite_mesure']) >0 else ""
+
         # -------------------------------
         # KPI cards
         # -------------------------------
         col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-        col1.metric("Total Production", f"{selected_data['quantite_produite'].sum():,.0f}")
-        col2.metric("Total Sold", f"{selected_data['quantite_vendue'].sum():,.0f}")
-        col3.metric("Total Consumed", f"{selected_data['quantite_consomme'].sum():,.0f}")
-        Total_revenue = selected_data['prix_unitaire_dollars'].sum()*selected_data['quantite_vendue'].sum()
-        col4.metric("Total Revenue ($)", f"{Total_revenue:,.2f}")
+        col1.metric(f"Total Production ({unite})", f"{selected_data['quantite_produite'].sum():,.0f}")
+        col2.metric(f"Total Sold ({unite})", f"{selected_data['quantite_vendue'].sum():,.0f}")
+        col3.metric(f"Total Consumed ({unite})", f"{selected_data['quantite_consomme'].sum():,.0f}")
+        selected_data['Total_revenue'] = selected_data['prix_unitaire_dollars']*selected_data['quantite_vendue']
+        col4.metric("Total Revenue ($)", f"{selected_data['Total_revenue'].sum():,.2f}")
         Total_invest = 0
         col5.metric("Total Investment ($)", f"{Total_invest:,.2f}")
         
         # Average revenue per household
-        col6.metric("Avg Revenue per Household ($)", f"{(Total_revenue/selected_data['nombre_menage'].sum()):,.2f}")
+        col6.metric("Avg Revenue per Household ($)", f"{(selected_data['Total_revenue'].sum()/selected_data['nombre_menage'].sum()):,.2f}")
         style_metric_cards()
 
         # -------------------------------

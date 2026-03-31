@@ -5,43 +5,26 @@ from streamlit_card import card
 from streamlit_extras.metric_cards import style_metric_cards
 import plotly.express as px
 import altair as alt
-from streamlit_folium import st_folium
-from shapely.geometry import mapping
-from datetime import datetime,date
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from datetime import date
 import smtplib
 from email.message import EmailMessage
-from email.mime.text import MIMEText
-from email.header import Header
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
-from streamlit.components.v1 import html
 import ssl
-from twilio.rest import Client
 from login import init_auth, require_login
-import time
 from core.connection import st_connection, psy_try_connect
+import os
+import uuid
+import requests
+
+UPLOAD_FOLDER = "static/proof"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # creates folder if it doesn’t exist
+
 
 if 'st_conn' not in st.session_state:
     pass
 init_auth()
 require_login()
 
-#SESSION_TIMEOUT =  10*60  # 15 minutes in seconds
-#now = time.time()
-
-# Initialize last activity
-#if "last_activity" not in st.session_state:
-#    st.session_state.last_activity = now
-
-# Check inactivity
-#if now - st.session_state.last_activity > SESSION_TIMEOUT:
-#    st.session_state.clear()
-    
-# Update activity timestamp
-#st.session_state.last_activity = now
-
+       
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -57,24 +40,59 @@ st.set_page_config(
     page_icon="🧊",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://www.extremelycoolapp.com/help',
-        'Report a bug': "https://www.extremelycoolapp.com/bug",
-        'About': "# This is a header. This is an *extremely* cool app!"
-    }
 )
 #-------------------------------
 # FUNCTIONS
 #-------------------------------
 
+@st.dialog("View document details", width='medium')
+def preview_document(preview_path):
+
+    if preview_path.lower().endswith((".png", ".jpg", ".jpeg")):
+        try:
+            st.image(preview_path)
+        except Exception as e:
+            st.error(f"Image file not fund: {e}")
+    elif preview_path.lower().endswith(".pdf"):
+        try:
+            st.pdf(preview_path)
+        except Exception as e:
+            st.error(f"PDF file not fund: {e}")
+        
+ 
+# Emoji or HTML icons for PDF / Image
+def file_icon(file_path):
+    if not isinstance(file_path, str):
+        return "❓"  # fallback if file_path is not a string
+    file_path = file_path.lower()
+    if file_path.endswith((".png", ".jpg", ".jpeg")):
+        return "🖼️"
+    elif file_path.endswith(".pdf"):
+        return "📄"
+    else:
+        return "❓"
+
+def save_file(uploaded_file):
+    BASE_URL = UPLOAD_FOLDER+"/"
+    ext = uploaded_file.name.split(".")[-1]
+    unique_name = f"{uuid.uuid4()}.{ext}"
+    
+    file_path = os.path.join(UPLOAD_FOLDER, unique_name)
+    
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    return BASE_URL+unique_name
+
+
 # Insert resolution into database
-def save_resolution(id_user, resolution, resolution_date, status, id_complaint):
+def save_resolution(id_user, resolution, resolution_date, status, id_complaint, response_image_link, response_pdf_link):
     conn = st.session_state.conn
     with conn.cursor() as cur:
         cur.execute("""INSERT INTO redd_project.resolutions
-                    (id_user, resolution, resolution_date, status, id_complaint)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """, (id_user, resolution, resolution_date, status, id_complaint))
+                    (id_user, resolution, resolution_date, status, id_complaint, response_image_link, response_pdf_link)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (id_user, resolution, resolution_date, status, id_complaint, response_image_link, response_pdf_link))
     conn.commit()
     
 #Send email notification
@@ -121,12 +139,12 @@ def get_connection():
 conn = st_connection()
 
 try:
-    grievances = conn.query( "SELECT *  FROM redd_project.grievances as g", ttl="10m")
-    resolutions = conn.query( "SELECT id_complaint,complaint_date,resolution,resolution_date,resolution_days,g.status,urgency_level," \
+    grievances = conn.query("SELECT *  FROM redd_project.grievances as g", ttl="2m")
+    resolutions = conn.query("SELECT response_image_link, response_pdf_link, id_complaint,complaint_date,resolution,resolution_date,resolution_days,g.status,urgency_level,s.id," \
     "village  FROM redd_project.grievances as g " \
-    "LEFT JOIN redd_project.resolutions as s ON s.id_complaint=g.reference_number", ttl="10m")
+    "LEFT JOIN redd_project.resolutions as s ON s.id_complaint=g.reference_number", ttl="30s")
     user_profile = conn.query("SELECT user_id,role_user,gu.email as email,id_personne,nom,prenom " \
-    "FROM redd_project.grievance_user as gu JOIN ressources_humaines.employe e ON gu.user_id=e.id_personne", ttl="10m")
+    "FROM redd_project.grievance_user as gu JOIN ressources_humaines.employe e ON gu.user_id=e.id_personne", ttl="2m")
     # Side option
 
     ######################
@@ -171,11 +189,15 @@ try:
         high_urgency = grievances.loc[grievances['urgency_type']=='High', 'id'].nunique()
         is_open = grievances.loc[grievances['status']=='Open', 'id'].nunique()
         under_invest = grievances.loc[grievances['status']=='Under Investigation', 'id'].nunique()
-        avg_time = round(grievances['resolution_days'].sum()/total_resolved)
+        if total_resolved==0:
+            avg_time = "No grievance resolved yet"
+        else:
+            avg_time = round(grievances['resolution_days'].sum()/total_resolved)
         # PIE CHART TOTAL SUBMISSION BY CLASSIFICATION & GENDER & ACCUSED CATEGORY
         complainant_gender = pd.DataFrame({
-            'gender':['Male', 'Female'],
-            'count':[grievances.loc[grievances['sex']=='Male', 'id'].nunique(), grievances.loc[grievances['sex']=='Female', 'id'].nunique()]
+            'gender':['Male', 'Female', 'Other'],
+            'count':[grievances.loc[grievances['sex']=='Male', 'id'].nunique(), grievances.loc[grievances['sex']=='Female', 'id'].nunique(),
+                     grievances.loc[grievances['sex']=='Other', 'id'].nunique()]
         })
 
         accused_category = pd.DataFrame({
@@ -410,7 +432,6 @@ try:
             severity_order = ["Low", "Medium", "High"]
 
     
-
             ######################################################## 
             #----- OPT 1: SIMPLE BAR: TOTAL PER VILLAGE -----------#
             ########################################################
@@ -534,7 +555,7 @@ try:
         # -------------------------
         # Load grievances
         # -------------------------
-        df =conn.query("SELECT id, reference_number, category, urgency_level, status, details, village, id_user FROM redd_project.grievances")
+        df =conn.query("SELECT id, reference_number, category, urgency_level, status, details, village, complaint_date, id_user, image_link  FROM redd_project.grievances")
 
         # Sidebar filters
         st.sidebar.title("Filter Grievances")
@@ -554,16 +575,44 @@ try:
         grievance_entered_by = filtered_df['id_user'].loc[filtered_df['id']==grievance_id].iloc[0]
         # Show grievance details
         grievance = df[df['id'] == grievance_id].iloc[0]
-        st.subheader(f"Grievance #{grievance_id}")
+        st.subheader(f"Grievance #{grievance['reference_number']} Submitted on {grievance['complaint_date']}")
         st.write(f"**Category:** {grievance['category']}")
         st.write(f"**Urgency:** {grievance['urgency_level']}")
         st.write(f"**Status:** {grievance['status']}")
         st.write(f"**Village:** {grievance['village']}")
         st.write(f"**Description:** {grievance['details']}")
+        if st.button("🖼️"):
+            preview_document("https://dewiyatech.com/images-pdf-rgmd/"+grievance['image_link'].split('/')[7])
 
         responses_df = resolutions[resolutions['id_complaint'] == grievance_ref]
         st.subheader("Previous Responses")
-        st.dataframe(responses_df)
+        # Table header
+        col1, col2, col3, col4, col5 = st.columns([1,1,3,1,1])
+        col1.write("Image")
+        col2.write("PDF")
+        col3.write("Response")
+        col4.write("Responded on")
+        col5.write("Resolved after(days)")
+
+        for idx, row in responses_df.iterrows():
+            col1, col2, col3, col4, col5 = st.columns([1,1,3,1,1])
+
+            # Image icon + clickable
+            img_link = row['response_image_link']
+            if img_link:  # make sure not None
+                if col1.button("🖼️", key=f"img{idx}"):
+                    preview_document(img_link)
+    
+            # PDF icon + clickable
+            pdf_link = row['response_pdf_link']
+            if pdf_link:
+                if col2.button("📄", key=f"pdf{idx}"):
+                    preview_document(pdf_link)
+                    
+            col3.write(row['resolution'])
+            col4.write(row['resolution_date'].date())
+            col5.write(row['resolution_days'])
+
         # -------------------------
         # Add a new response
         # -------------------------
@@ -575,6 +624,7 @@ try:
                 min_value=date(2000, 1, 1),
                 help="Pick a date above 2000")
             status = st.selectbox("Status", ["Under Investigation","Resolved", "Open"])
+            uploaded_files = st.file_uploader("Upload a directory", accept_multiple_files=True, type=["jpg","png", "pdf"])
             submit = st.form_submit_button("Submit Response")
         if submit:
             if response_text.strip() == "":
@@ -583,8 +633,30 @@ try:
                 try:
                     receiver = user_profile.loc[user_profile['user_id']==grievance_entered_by]
                     entered_by = receiver['prenom'] +" "+ receiver['nom']
-                    save_resolution(responder_name,response_text,date_response, status, grievance_ref )
-                    st.success("Resolution recorded successfully!")
+
+                    #Validate Upload
+                    if uploaded_files:
+                        if len(uploaded_files) > 2:
+                            st.error("You can upload a maximum of 2 files: one image and one PDF.")
+                        else:
+                            image_file = None
+                            pdf_file = None
+
+                            for file in uploaded_files:
+                                if file.type.startswith("image/"):
+                                    image_url = save_file(file)
+                                    image_file = image_url
+                                elif file.type == "application/pdf":
+                                    pdf_url = save_file(file)
+                                    pdf_file = pdf_url
+
+                            # Final validation
+                            if image_file or pdf_file:
+                                save_resolution(responder_name,response_text,date_response, status, grievance_ref,image_file,pdf_file)
+                                st.success("Resolution recorded successfully!")
+                            else:
+                                st.warning("Please upload exactly one image and/or one PDF.")
+
                     # Response submitted notification
                     if status!='Resolved':
                         email_html = build_email_html("grievance_response_email_notification.html",entered_by.iloc[0], grievance_ref ,grievance_village, status, response_text, "NCA Project")

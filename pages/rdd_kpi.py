@@ -1,16 +1,4 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import time
-from streamlit_card import card
-from streamlit_extras.metric_cards import style_metric_cards
-import plotly.express as px
-import altair as alt
-import geopandas as gpd
-import folium
-from streamlit_folium import st_folium
-import pydeck as pdk
-from shapely.geometry import mapping
 import re
 from core.connection import st_connection
 
@@ -107,7 +95,12 @@ try:
 
     #Queries
     # Training
-    training_bg = conn.query('SELECT * FROM prog_coco.formation;', ttl="10m")
+    training_bg = conn.query('SELECT f.association,f.mis_a_jour_agent,f.programme, f.homme, f.femme, p.proffesionel FROM prog_coco.formation f JOIN prog_coco.programme p ON f.programme=p.programme;', ttl="10m")
+    monitoring_bg = conn.query("SELECT action_prise, observation, piege_gibier FROM prog_gorille.surveillance;", ttl="10m")
+    schooling_bg = conn.query("SELECT * FROM prog_coco.scolarisation;", ttl="10m")
+    cfcl_bg = conn.query("SELECT * FROM prog_coco.cfcl;", ttl="10m")
+    suivie_production_bg = conn.query("SELECT sp.speculation, msb.unite, msb.status, msb.groupe, sp.mortalite_betail, sp.reproduction_betail FROM prog_coco.suivi_production sp " \
+    "JOIN prog_coco.materiel_semence_betail msb ON sp.speculation=msb.speculation;", ttl="10m")
     SIA001_qr = training_bg[
         (training_bg['mis_a_jour_agent'] == 1) &
         (training_bg['programme'].isin(['Agriculture', 'Apiculture', 'Elevage', 'Pisciculture']))
@@ -123,19 +116,24 @@ try:
     SIA005 = 0
     SIA006 = 0
     SIA007 = 0
-    SIA008 = 0
+    SIA008_qr = monitoring_bg[(monitoring_bg['action_prise']=='personne_arrete') & (monitoring_bg['observation']=='Coup de bois')].shape[0]
+    SIA008 = SIA008_qr
     SIA009 = 0
     SIA010 = 0
     SIA011 = 0
-    SIA012 = 0
+    SIA012_qr = training_bg[training_bg['proffesionel']==True].shape[0]
+    SIA012 = SIA012_qr
     SIA013 = 0
     SIA014 = 0
     SIA015 = 0
-    SIA016 = 0
+    SIA016_qr = monitoring_bg[(monitoring_bg['action_prise']=='personne_arrete') & (monitoring_bg['observation']=='Mine')].shape[0]
+    SIA016 = SIA016_qr
     SIA017 = 0
+    SIA018_qr = awareness_bg[awareness_bg['programme']=='Sensibilisation Viande de Brouse et Ressource en Proteine'].shape[0]
     SIA018 = 0
     SIA019 = 0
-    SIA020 = 0
+    SIA020_qr = monitoring_bg[(monitoring_bg['action_prise']=='personne_arrete') & (monitoring_bg['observation'].isin(['Chasse', 'Piegeage']))].shape[0]
+    SIA020 = SIA020_qr
     SIA021 = 0
     SIA022 = 0
     SIA023 = 0
@@ -145,7 +143,8 @@ try:
     SIA027 = 0
     SIA028 = 0
     SIA029 = 0
-    SIA030 = 0
+    SIA030_qr = schooling_bg['montant_usd'].sum()
+    SIA030 = SIA030_qr
     SIA031 = 0
     SIA032 = 0
     SIA033 = 0
@@ -165,10 +164,16 @@ try:
     SIA047 = 0
     SIA048 = 0
     SIA049 = 0
-    B001 = 0
+    B001_qr = training_bg[
+        (training_bg['association'] == 1) &
+        (training_bg['programme'].isin(['Elevage', 'Pisciculture']))
+    ]
+    B001 = B001_qr['homme'].sum() + B001_qr['femme'].sum()
     B002 = 0
     B003 = 0
-    B004 = 0
+    B004_qr = suivie_production_bg[['reproduction_betail', 'mortalite_betail', 'groupe']].loc[suivie_production_bg['groupe'].isin(['mammifere', 'Oiseau'])]
+    B004_qr = (B004_qr.groupby('groupe', as_index=False)[['reproduction_betail','mortalite_betail']].sum())
+    B004 = f"Mammals mortality: {B004_qr['mortalite_betail'].loc[B004_qr['groupe']=='mammifere']}, reproduction:{B004_qr['reproduction_betail'].loc[B004_qr['groupe']=='mammifere']} \n Birds mortality: {B004_qr['mortalite_betail'].loc[B004_qr['groupe']=='Oiseau']}, reproduction:{B004_qr['reproduction_betail'].loc[B004_qr['groupe']=='Oiseau']}"
     B005 = 0
     B006 = 0
     B007 = 0
@@ -192,9 +197,11 @@ try:
     B025 = 0
     B026 = 0
     B027 = 0
+    B028_qr = monitoring_bg[(monitoring_bg['piege_gibier']==True) & (monitoring_bg['observation'].isin(['Gorille', 'Chimpanze']))].shape[0]
     B028 = 0
     B029 = 0
-    B030 = 0
+    B030_qr = cfcl_bg['superficie_km'].sum()*100
+    B030 = B030_qr
     B031 = 0
     B032 = 0
     B033 = 0
@@ -503,4 +510,4 @@ try:
                     col.metric(label=kpi_code, value=value, delta=delta, help=descriptions.get(kpi_code))
                 
 except Exception as e:
-    pass
+    st.write(e)

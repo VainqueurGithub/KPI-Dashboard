@@ -1,6 +1,5 @@
 # db_connection.py
 import streamlit as st
-import streamlit.components.v1 as components
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
@@ -23,8 +22,8 @@ def show_db_popup():
 # Psycopg2 Connection
 # ---------------------
 @st.cache_resource
-def psy_try_connect(host="10.5.2.130", port="5432", database="dianfossey", 
-                    user="vainqueur", password="BWLCMmpdva@10"):
+def psy_try_connect(host="173.212.212.172", port="5432", database="dianfossey", 
+                    user="vainqueur", password="jr_2@savingsbank_"):
     return psycopg2.connect(
         host=host,
         port=port,
