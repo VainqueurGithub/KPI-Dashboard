@@ -1,7 +1,7 @@
 import streamlit as st
 from core.connection import st_connection, psy_try_connect
 
-conn = psy_try_connect()
+conn = st.connection("postgresql", type='sql')
 
 def init_auth():
     if "logged_in" not in st.session_state:
