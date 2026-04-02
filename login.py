@@ -1,5 +1,4 @@
 import streamlit as st
-from core.connection import st_connection, psy_try_connect
 
 conn = st.connection("postgresql", type='sql')
 
