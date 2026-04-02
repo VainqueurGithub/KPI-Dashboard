@@ -20,6 +20,11 @@ pyinstaller-hooks-contrib==2025.10
 pyparsing==3.2.5
 pywin32-ctypes==0.2.3
 requests==2.32.5
+psycopg2-binary
+streamlit_card
+streamlit_extras
+SQLAlchemy
+streamlit-pdf
 typing_extensions==4.15.0
 urllib3==2.5.0
 zope.event==6.1

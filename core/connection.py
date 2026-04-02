@@ -3,7 +3,7 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
-
+DB_CONFIG = st.secrets["postgresql"]
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # go up from core/ to project root
 img_path = os.path.join(BASE_DIR, "static", "logo", "connection_database_failed.jpeg")
 
@@ -22,8 +22,8 @@ def show_db_popup():
 # Psycopg2 Connection
 # ---------------------
 @st.cache_resource
-def psy_try_connect(host="173.212.212.172", port="5432", database="dianfossey", 
-                    user="vainqueur", password="jr_2@savingsbank_"):
+def psy_try_connect(host=DB_CONFIG["host"], port=DB_CONFIG["port"], database=DB_CONFIG["database"], 
+                    user=DB_CONFIG["username"], password=DB_CONFIG["password"]):
     return psycopg2.connect(
         host=host,
         port=port,
