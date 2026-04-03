@@ -3,7 +3,7 @@ import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
-DB_CONFIG = st.secrets["postgresql"]
+DB_CONFIG = st.secrets["connections"]["postgresql"]
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # go up from core/ to project root
 img_path = os.path.join(BASE_DIR, "static", "logo", "connection_database_failed.jpeg")
 
