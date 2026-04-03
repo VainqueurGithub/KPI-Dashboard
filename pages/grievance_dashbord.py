@@ -48,7 +48,7 @@ st.set_page_config(
 @st.dialog("View document details", width='medium')
 def preview_document(preview_path):
 
-    if preview_path.lower().endswith((".png", ".jpg", ".jpeg")):
+    if preview_path.endswith((".png", ".jpg", ".jpeg")):
         try:
             st.image(preview_path)
         except Exception as e:
