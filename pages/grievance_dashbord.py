@@ -601,14 +601,18 @@ try:
             img_link = row['response_image_link']
             if img_link:  # make sure not None
                 if col1.button("🖼️", key=f"img{idx}"):
-                    preview_document(img_link)
-    
+                    try:
+                        preview_document(img_link)
+                    except Exception as e:
+                        st.error (f"Image not found: {e}")
             # PDF icon + clickable
             pdf_link = row['response_pdf_link']
             if pdf_link:
                 if col2.button("📄", key=f"pdf{idx}"):
-                    preview_document(pdf_link)
-                    
+                    try:
+                        preview_document(pdf_link)
+                    except Exception as e:
+                        st.error (f"PDF not found: {e}")
             col3.write(row['resolution'])
             col4.write(row['resolution_date'].date())
             col5.write(row['resolution_days'])
