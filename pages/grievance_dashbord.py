@@ -24,7 +24,9 @@ if 'st_conn' not in st.session_state:
 init_auth()
 require_login()
 
-       
+if 'disabled' not in st.session_state:
+    st.session_state.disabled = False
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -44,6 +46,17 @@ st.set_page_config(
 #-------------------------------
 # FUNCTIONS
 #-------------------------------
+
+# Disabled submit respond button once the response has been resolved
+def disabled_button(id_complaint, status='Resolved'):
+       conn = st.session_state.conn
+       cur = conn.cursor()
+       cur.execute("SELECT * FROM redd_project.grievances WHERE id = %s AND status = %s LIMIT 1;", (id_complaint,status))
+       row = cur.fetchone()
+       if row:
+           st.session_state.disabled = True
+       else:
+           st.session_state.disabled = False
 
 @st.dialog("View document details", width='medium')
 def preview_document(preview_path):
@@ -552,10 +565,11 @@ try:
             st.plotly_chart(fig_sla, use_container_width=True)
 
     elif submenu=='Active grievances':
+
         # -------------------------
         # Load grievances
         # -------------------------
-        df =conn.query("SELECT id, reference_number, category, urgency_level, status, details, village, complaint_date, id_user, image_link  FROM redd_project.grievances")
+        df =conn.query("SELECT id, reference_number, category, urgency_level, status, details, village, complaint_date, id_user, image_link, resolution_days  FROM redd_project.grievances", ttl="30s")
 
         # Sidebar filters
         st.sidebar.title("Filter Grievances")
@@ -573,9 +587,13 @@ try:
         grievance_ref = filtered_df['reference_number'].loc[filtered_df['id']==grievance_id].iloc[0]
         grievance_village = filtered_df['village'].loc[filtered_df['id']==grievance_id].iloc[0]
         grievance_entered_by = filtered_df['id_user'].loc[filtered_df['id']==grievance_id].iloc[0]
+
+        # Call function to check the grievance status - if Resolved desable sumbit button for the resolution form
+        disabled_button(grievance_id)
+
         # Show grievance details
         grievance = df[df['id'] == grievance_id].iloc[0]
-        st.subheader(f"Grievance #{grievance['reference_number']} Submitted on {grievance['complaint_date']}")
+        st.subheader(f"Grievance #{grievance['reference_number']} Submitted on {grievance['complaint_date']}, Resolved after: {grievance['resolution_days']} days")
         st.write(f"**Category:** {grievance['category']}")
         st.write(f"**Urgency:** {grievance['urgency_level']}")
         st.write(f"**Status:** {grievance['status']}")
@@ -587,15 +605,14 @@ try:
         responses_df = resolutions[resolutions['id_complaint'] == grievance_ref]
         st.subheader("Previous Responses")
         # Table header
-        col1, col2, col3, col4, col5 = st.columns([1,1,3,1,1])
+        col1, col2, col3, col4 = st.columns([1,1,4,1])
         col1.write("Image")
         col2.write("PDF")
         col3.write("Response")
         col4.write("Responded on")
-        col5.write("Resolved after(days)")
 
         for idx, row in responses_df.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([1,1,3,1,1])
+            col1, col2, col3, col4 = st.columns([1,1,4,1])
 
             # Image icon + clickable
             img_link = row['response_image_link']
@@ -613,9 +630,9 @@ try:
                         preview_document(pdf_link)
                     except Exception as e:
                         st.error (f"PDF not found: {e}")
+                    
             col3.write(row['resolution'])
             col4.write(row['resolution_date'].date())
-            col5.write(row['resolution_days'])
 
         # -------------------------
         # Add a new response
@@ -629,7 +646,7 @@ try:
                 help="Pick a date above 2000")
             status = st.selectbox("Status", ["Under Investigation","Resolved", "Open"])
             uploaded_files = st.file_uploader("Upload a directory", accept_multiple_files=True, type=["jpg","png", "pdf"])
-            submit = st.form_submit_button("Submit Response")
+            submit = st.form_submit_button("Submit Response", disabled=st.session_state.disabled, on_click=disabled_button, args=(grievance_id,))
         if submit:
             if response_text.strip() == "":
                 st.warning("Response text cannot be empty!")
